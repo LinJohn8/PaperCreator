@@ -22,8 +22,12 @@ class TestWorkbenchLayout:
         from papercreator.core.paths import get_paths
 
         paths = get_paths()
-        assert paths.home == temp_home
-        assert paths.workspace == temp_home / "projects"
+        # Windows runners may expose the temp root through an 8.3 alias such as
+        # RUNNER~1.  The application intentionally resolves that alias, so compare
+        # against the canonical fixture path rather than its original spelling.
+        expected_home = temp_home.resolve()
+        assert paths.home == expected_home
+        assert paths.workspace == expected_home / "projects"
         expected = (
             paths.ideas_dir,
             paths.reference_papers_dir,
