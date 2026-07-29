@@ -1,0 +1,36 @@
+{
+  "name": "papercreator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local multi-agent paper writing workbench (Electron desktop + Python backend)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LinJohn8/PaperCreator.git"
+  },
+  "homepage": "https://github.com/LinJohn8/PaperCreator#readme",
+  "bugs": {
+    "url": "https://github.com/LinJohn8/PaperCreator/issues"
+  },
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "backend": "node scripts/run-backend.mjs",
+    "dev": "npm run dev --workspace @papercreator/desktop",
+    "build": "npm run build --workspace @papercreator/desktop",
+    "build:backend": "node scripts/build-backend.mjs",
+    "package": "npm run package --workspace @papercreator/desktop",
+    "test:backend": "node scripts/run-tests.mjs",
+    "test:e2e": "npm run test:e2e --workspace @papercreator/desktop",
+    "test:installer": "node scripts/installer-smoke.mjs",
+    "test:release": "npm run package && npm run test:installer",
+    "cleanup:e2e": "node scripts/cleanup-e2e-temp.mjs",
+    "validate:docs": "node scripts/validate-wiki.mjs",
+    "typecheck": "npm run typecheck --workspace @papercreator/desktop"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

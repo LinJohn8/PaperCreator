@@ -1,0 +1,81 @@
+{
+  "name": "@papercreator/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PaperCreator desktop workbench (Electron + React)",
+  "author": "HWSLandDFTX8",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LinJohn8/PaperCreator.git"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "dev:web": "vite",
+    "brand:build": "node scripts/render-brand-assets.cjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "package": "npm run brand:build && npm run build && node ../../scripts/build-backend.mjs && electron-builder",
+    "test:e2e": "npm run build && npm run typecheck:e2e && playwright test --config e2e/playwright.config.ts",
+    "typecheck": "tsc --noEmit && npm run typecheck:e2e",
+    "typecheck:e2e": "tsc --project e2e/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@codemirror/commands": "6.7.1",
+    "@codemirror/lang-markdown": "6.3.0",
+    "@codemirror/language": "6.10.3",
+    "@codemirror/search": "6.5.6",
+    "@codemirror/state": "6.4.1",
+    "@codemirror/theme-one-dark": "6.1.2",
+    "@codemirror/view": "6.34.1",
+    "@playwright/test": "1.62.0",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.1",
+    "@types/three": "0.169.0",
+    "@vitejs/plugin-react": "4.3.2",
+    "concurrently": "9.0.1",
+    "electron": "32.2.0",
+    "electron-builder": "25.1.8",
+    "rcedit": "4.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.169.0",
+    "typescript": "5.6.3",
+    "vite": "5.4.9",
+    "wait-on": "8.0.1",
+    "zustand": "4.5.5"
+  },
+  "build": {
+    "appId": "dev.papercreator.app",
+    "productName": "PaperCreator",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "afterPack": "scripts/after-pack.cjs",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/brand/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../../build/backend-runtime/papercreator-backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "icon": "assets/brand/icon.png",
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "PaperCreator-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
