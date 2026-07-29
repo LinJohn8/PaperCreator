@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "papercreator"
+version = "0.1.0"
+description = "Local multi-agent paper writing workbench - backend service"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn==0.34.0",
+    "pydantic==2.10.4",
+    "pydantic-settings==2.7.0",
+    "httpx==0.28.1",
+    "python-multipart==0.0.20",
+    "numpy>=1.24,<3",
+    "scikit-learn>=1.3,<2",
+    # Pure-Python, BSD-licensed extraction for text-bearing PDFs. Scanned PDFs
+    # are reported as requiring OCR rather than silently producing empty text.
+    "pypdf>=5,<7",
+]
+
+[project.optional-dependencies]
+# Heavier analysis stack. The backend degrades gracefully without these:
+# see papercreator/analysis/embeddings.py and reduce.py for the fallbacks.
+#
+# The upper bounds are not decorative. Verified on this machine
+# (Python 3.11 / torch 2.0.1): installing unpinned pulls
+# transformers 5.x, which requires torch>=2.4 and silently disables the
+# PyTorch backend, and huggingface-hub 1.x, which removed `HfFolder` and
+# breaks sentence-transformers 5.x at import. The combination below
+# (sentence-transformers 2.7.0 + transformers 4.44 + hub 0.36) imports and
+# runs against torch 2.0.
+#
+# HDBSCAN is NOT listed: scikit-learn >= 1.3 ships its own implementation and
+# analysis/cluster.py prefers whichever is importable. The standalone
+# `hdbscan` package needs a C++ toolchain on Windows, so requiring it would
+# make this extra fail to install for the target platform.
+analysis = [
+    "umap-learn>=0.5.5,<0.6",
+    "sentence-transformers>=2.6,<3",
+    "transformers>=4.34,<5",
+    "huggingface_hub>=0.20,<1.0",
+    "scikit-learn>=1.3",
+]
+# Export helpers. Without python-docx the DOCX writer falls back to a
+# minimal built-in OOXML writer (convert/docx_min.py).
+export = [
+    "python-docx>=1.1",
+]
+# Local-only scanned PDF OCR. Tesseract and its chosen language packs remain a
+# separately installed system dependency; the app probes them before enabling
+# OCR and never downloads models at runtime.
+ocr = [
+    "pypdfium2>=4.30,<5",
+    "Pillow>=10,<12",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+package = [
+    "pyinstaller>=6.10,<7",
+]
+
+[project.scripts]
+papercreator = "papercreator.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/LinJohn8/PaperCreator"
+Issues = "https://github.com/LinJohn8/PaperCreator/issues"
+
+[tool.setuptools.packages.find]
+include = ["papercreator*"]
+
+[tool.setuptools.package-data]
+papercreator = ["resources/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

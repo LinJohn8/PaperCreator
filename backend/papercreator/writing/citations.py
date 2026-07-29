@@ -1,0 +1,419 @@
+"""Citation handling: keys, BibTeX generation, and marker rewriting.
+
+The agents draft prose containing ``[SCARSELLI2009]``-style markers. Turning that
+into a real bibliography is this module's job, and it has to work for three
+different output worlds:
+
+* **LaTeX/Overleaf** - markers become ``\\cite{key}`` and a ``.bib`` file is
+  generated from the library.
+* **Markdown/Word** - there is no citation engine, so markers become rendered
+  references (``[1]`` or ``(Author, Year)``) with a numbered reference list.
+* **Plain reading** - the marker is left as-is with a hover card in the editor.
+
+Author-year keys are used throughout the pipeline rather than numbers because a
+model keeps ``[SCARSELLI2009]`` attached to the right paper, whereas it will
+happily renumber ``[7]``. Numbering happens only at export, from the order of
+first appearance.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from ..core.logging_setup import get_logger
+from ..core.models import Paper
+from ..core.util import collapse_ws
+
+log = get_logger(__name__)
+
+# A citation marker: [KEY] or [KEY1][KEY2]. Keys are alphanumeric, start with a
+# letter, and are long enough not to collide with ordinary bracketed text.
+MARKER = re.compile(r"\[([A-Za-z][A-Za-z0-9]{2,24})\]")
+
+CITATION_STYLES = ("ieee", "acm", "apa", "nature", "author-year", "numeric")
+
+_BIB_TYPE_BY_VENUE_TYPE = {
+    "journal": "article",
+    "conference": "inproceedings",
+    "preprint": "misc",
+    "book": "book",
+    "thesis": "phdthesis",
+    "report": "techreport",
+    "review": "article",
+    "dataset": "misc",
+}
+
+# Characters that must be escaped in a BibTeX field value.
+_BIB_ESCAPES = {
+    "\\": r"\textbackslash{}",
+    "{": r"\{",
+    "}": r"\}",
+    "$": r"\$",
+    "&": r"\&",
+    "%": r"\%",
+    "#": r"\#",
+    "_": r"\_",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def escape_bibtex(text: str) -> str:
+    """Escape a value for a BibTeX field.
+
+    Applied to every field because paper titles routinely contain ``&``, ``%``
+    and ``_`` (chemical formulae, file names, math), each of which silently
+    breaks a LaTeX build or produces wrong output.
+    """
+    if not text:
+        return ""
+    out: list[str] = []
+    for char in text:
+        out.append(_BIB_ESCAPES.get(char, char))
+    return "".join(out)
+
+
+def protect_capitals(title: str) -> str:
+    """Brace-protect words BibTeX would otherwise lowercase.
+
+    Most bibliography styles lowercase titles. Acronyms and proper nouns must
+    survive, so ``GNN`` becomes ``{GNN}``. Without this, ``BERT`` renders as
+    ``bert`` in the reference list.
+    """
+    def wrap(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if word.isupper() and len(word) > 1:
+            return f"{{{word}}}"
+        # Mixed case beyond the first letter (GraphSAGE, eXpressive).
+        if any(c.isupper() for c in word[1:]):
+            return f"{{{word}}}"
+        return word
+
+    return re.sub(r"[A-Za-z][A-Za-z0-9\-]*", wrap, title)
+
+
+@dataclass
+class CitationKeyMap:
+    """Bidirectional map between paper ids and citation keys."""
+
+    by_paper: dict[str, str]
+    by_key: dict[str, str]
+
+    @classmethod
+    def build(cls, papers: list[Paper]) -> "CitationKeyMap":
+        by_paper: dict[str, str] = {}
+        by_key: dict[str, str] = {}
+        used: dict[str, int] = {}
+        for paper in papers:
+            base = _base_key(paper)
+            count = used.get(base, 0)
+            used[base] = count + 1
+            # The second occurrence gets 'a', the third 'b'. Without the -1 the
+            # sequence would start at 'b' and the first suffix letter never appear.
+            key = base if count == 0 else f"{base}{chr(ord('a') + count - 1)}"
+            by_paper[paper.id] = key
+            by_key[key] = paper.id
+        return cls(by_paper=by_paper, by_key=by_key)
+
+    def key_for(self, paper_id: str) -> str:
+        return self.by_paper.get(paper_id, "")
+
+    def paper_for(self, key: str) -> str:
+        return self.by_key.get(key, "")
+
+
+def _base_key(paper: Paper) -> str:
+    surname = ""
+    if paper.authors:
+        parts = paper.authors[0].name.replace(".", " ").split()
+        if parts:
+            surname = "".join(c for c in parts[-1] if c.isalnum()).upper()[:12]
+    return f"{surname or 'ANON'}{paper.year or 'ND'}"
+
+
+def build_bibtex(papers: list[Paper], keys: CitationKeyMap | None = None) -> str:
+    """Generate a ``.bib`` file for the given papers.
+
+    Field selection follows what the source providers actually supply: Crossref
+    contributes volume/issue/pages/publisher, arXiv the eprint id, OpenAlex the
+    DOI and venue. Missing fields are omitted rather than emitted empty, because
+    an empty ``pages = {}`` produces a stray comma in some styles.
+    """
+    key_map = keys or CitationKeyMap.build(papers)
+    entries: list[str] = [
+        "% Generated by PaperCreator from the paper library.",
+        "% Regenerate with: Export > BibTeX. Manual edits here are overwritten.",
+        "",
+    ]
+    for paper in papers:
+        key = key_map.key_for(paper.id)
+        if not key:
+            continue
+        raw = paper.raw or {}
+        crossref = raw.get("crossref") or {}
+        bib_type = _BIB_TYPE_BY_VENUE_TYPE.get(paper.venue_type, "")
+        if not bib_type:
+            bib_type = "article" if paper.venue else "misc"
+
+        fields: list[tuple[str, str]] = []
+        fields.append(("title", f"{{{protect_capitals(escape_bibtex(paper.title))}}}"))
+        if paper.authors:
+            authors = " and ".join(
+                escape_bibtex(_bibtex_author(a.name)) for a in paper.authors
+            )
+            fields.append(("author", f"{{{authors}}}"))
+        if paper.year:
+            fields.append(("year", f"{{{paper.year}}}"))
+
+        if bib_type == "inproceedings":
+            if paper.venue:
+                fields.append(("booktitle", f"{{{escape_bibtex(paper.venue)}}}"))
+        elif paper.venue:
+            fields.append(("journal", f"{{{escape_bibtex(paper.venue)}}}"))
+
+        for name, value in (
+            ("volume", crossref.get("volume")),
+            ("number", crossref.get("issue")),
+            ("pages", crossref.get("page")),
+            ("publisher", crossref.get("publisher")),
+        ):
+            if value:
+                fields.append((name, f"{{{escape_bibtex(str(value))}}}"))
+        if paper.doi:
+            fields.append(("doi", f"{{{escape_bibtex(paper.doi)}}}"))
+        if paper.arxiv_id:
+            fields.append(("eprint", f"{{{paper.arxiv_id}}}"))
+            fields.append(("archivePrefix", "{arXiv}"))
+        if paper.url and not paper.doi:
+            fields.append(("url", f"{{{escape_bibtex(paper.url)}}}"))
+        if paper.abstract:
+            # Abstracts are long; include them so the .bib is self-contained for
+            # tools like Zotero, but truncate to keep the file readable.
+            fields.append(
+                ("abstract", f"{{{escape_bibtex(paper.abstract[:1200])}}}")
+            )
+
+        body = ",\n".join(f"  {name} = {value}" for name, value in fields)
+        entries.append(f"@{bib_type}{{{key},\n{body}\n}}")
+        entries.append("")
+    return "\n".join(entries)
+
+
+def _bibtex_author(name: str) -> str:
+    """``Ashish Vaswani`` -> ``Vaswani, Ashish`` for unambiguous BibTeX parsing."""
+    cleaned = collapse_ws(name)
+    if "," in cleaned or " " not in cleaned:
+        return cleaned
+    parts = cleaned.split()
+    return f"{parts[-1]}, {' '.join(parts[:-1])}"
+
+
+def find_markers(text: str) -> list[str]:
+    """Distinct citation keys used in a text, in order of first appearance."""
+    seen: list[str] = []
+    for match in MARKER.finditer(text or ""):
+        key = match.group(1)
+        if key not in seen:
+            seen.append(key)
+    return seen
+
+
+def validate_markers(
+    text: str, keys: CitationKeyMap
+) -> dict[str, Any]:
+    """Check every marker against the allowed key set.
+
+    Returned separately from any LLM opinion because this is a decidable
+    question: either the key is in the map or it is not. The citation agent's
+    judgement is about whether the *claim* matches the paper.
+    """
+    used = find_markers(text)
+    unknown = [k for k in used if k not in keys.by_key]
+    return {
+        "used": used,
+        "unknown": unknown,
+        "valid": [k for k in used if k in keys.by_key],
+        "unused": [k for k in keys.by_key if k not in used],
+        "count": len(used),
+    }
+
+
+def to_latex_citations(text: str, keys: CitationKeyMap) -> tuple[str, list[str]]:
+    """Rewrite ``[KEY]`` to ``\\cite{key}``, merging adjacent markers.
+
+    ``[A][B]`` becomes ``\\cite{a,b}`` rather than two commands, which is what
+    produces ``[1], [2]`` instead of ``[1][2]`` in most styles. Unknown keys are
+    left untouched and reported, so a build failure points at real text rather
+    than silently dropping a citation.
+    """
+    unknown: list[str] = []
+
+    def replace_run(match: re.Match[str]) -> str:
+        run = match.group(0)
+        found = MARKER.findall(run)
+        resolved = []
+        for key in found:
+            if key in keys.by_key:
+                resolved.append(key.lower())
+            else:
+                unknown.append(key)
+        if not resolved:
+            return run
+        return "\\cite{" + ",".join(resolved) + "}"
+
+    # Match one or more adjacent markers, optionally separated by spaces.
+    rewritten = re.sub(r"(?:\[[A-Za-z][A-Za-z0-9]{2,24}\]\s*)+", replace_run, text or "")
+    return rewritten, sorted(set(unknown))
+
+
+def to_numbered_citations(
+    text: str,
+    keys: CitationKeyMap,
+    papers_by_id: dict[str, Paper],
+    *,
+    start: int = 1,
+    existing: dict[str, int] | None = None,
+) -> tuple[str, dict[str, int], list[str]]:
+    """Rewrite markers to ``[1]`` numbering by order of first appearance.
+
+    ``existing`` carries numbering across sections so the whole document shares
+    one sequence - the caller passes the same dict through every section.
+    Returns ``(text, numbering, unknown_keys)``.
+    """
+    numbering = dict(existing or {})
+    counter = max(numbering.values(), default=start - 1) + 1
+    unknown: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in keys.by_key:
+            unknown.append(key)
+            return match.group(0)
+        nonlocal counter
+        if key not in numbering:
+            numbering[key] = counter
+            counter += 1
+        return f"[{numbering[key]}]"
+
+    rewritten = MARKER.sub(replace, text or "")
+    # Collapse ``[1] [2]`` produced by adjacent markers into ``[1, 2]``.
+    rewritten = re.sub(
+        r"\[(\d+)\]\s*\[(\d+)\]",
+        lambda m: f"[{m.group(1)}, {m.group(2)}]",
+        rewritten,
+    )
+    return rewritten, numbering, sorted(set(unknown))
+
+
+def to_author_year_citations(
+    text: str, keys: CitationKeyMap, papers_by_id: dict[str, Paper]
+) -> tuple[str, list[str]]:
+    """Rewrite markers to ``(Author, Year)`` form."""
+    unknown: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        paper_id = keys.paper_for(key)
+        paper = papers_by_id.get(paper_id)
+        if paper is None:
+            unknown.append(key)
+            return match.group(0)
+        names = paper.author_names()
+        if not names:
+            who = "Anon."
+        elif len(names) == 1:
+            who = names[0].split()[-1]
+        elif len(names) == 2:
+            who = f"{names[0].split()[-1]} & {names[1].split()[-1]}"
+        else:
+            who = f"{names[0].split()[-1]} et al."
+        return f"({who}, {paper.year or 'n.d.'})"
+
+    return MARKER.sub(replace, text or ""), sorted(set(unknown))
+
+
+def format_reference(paper: Paper, style: str = "ieee", number: int = 0) -> str:
+    """One rendered reference line for a Markdown/Word bibliography."""
+    names = paper.author_names()
+    year = paper.year or "n.d."
+    venue = paper.venue or ""
+    doi = f" doi:{paper.doi}" if paper.doi else ""
+
+    if style in ("ieee", "numeric"):
+        authors = _ieee_authors(names)
+        parts = [f"[{number}]" if number else "", authors,
+                 f'"{paper.title},"' if paper.title else ""]
+        if venue:
+            parts.append(f"*{venue}*,")
+        parts.append(f"{year}.")
+        return collapse_ws(" ".join(p for p in parts if p)) + doi
+    if style == "acm":
+        authors = ", ".join(names[:3]) + (" et al." if len(names) > 3 else "")
+        return collapse_ws(
+            f"{authors}. {year}. {paper.title}. *{venue}*."
+        ) + doi
+    if style == "nature":
+        authors = _ieee_authors(names)
+        return collapse_ws(f"{authors} {paper.title}. *{venue}* ({year}).") + doi
+    # apa / author-year
+    authors = ", ".join(names[:20]) or "Anonymous"
+    return collapse_ws(f"{authors} ({year}). {paper.title}. *{venue}*.") + doi
+
+
+def _ieee_authors(names: list[str]) -> str:
+    """IEEE renders given names as initials: ``F. Scarselli, M. Gori``."""
+    if not names:
+        return "Anonymous,"
+    formatted: list[str] = []
+    for name in names[:6]:
+        parts = name.split()
+        if len(parts) == 1:
+            formatted.append(parts[0])
+        else:
+            initials = " ".join(f"{p[0]}." for p in parts[:-1] if p)
+            formatted.append(f"{initials} {parts[-1]}")
+    text = ", ".join(formatted)
+    if len(names) > 6:
+        text += " et al."
+    return text + ","
+
+
+def build_reference_list(
+    papers: list[Paper],
+    numbering: dict[str, int],
+    keys: CitationKeyMap,
+    *,
+    style: str = "ieee",
+) -> str:
+    """Render the bibliography for Markdown/DOCX output, in citation order."""
+    by_id = {p.id: p for p in papers}
+    ordered = sorted(numbering.items(), key=lambda item: item[1])
+    lines: list[str] = []
+    for key, number in ordered:
+        paper = by_id.get(keys.paper_for(key))
+        if paper is None:
+            continue
+        lines.append(format_reference(paper, style=style, number=number))
+    return "\n\n".join(lines)
+
+
+def cited_papers(
+    texts: list[str], keys: CitationKeyMap, papers_by_id: dict[str, Paper]
+) -> list[Paper]:
+    """Papers actually cited across the given texts, in first-appearance order.
+
+    Exports use this rather than the whole library, so a bibliography contains
+    only what the manuscript cites - a reviewer noticing 200 uncited references
+    is a real problem.
+    """
+    out: list[Paper] = []
+    seen: set[str] = set()
+    for text in texts:
+        for key in find_markers(text):
+            paper_id = keys.paper_for(key)
+            if paper_id and paper_id not in seen and paper_id in papers_by_id:
+                seen.add(paper_id)
+                out.append(papers_by_id[paper_id])
+    return out

@@ -1,0 +1,213 @@
+/*
+ * VS Code-style dark theme.
+ *
+ * The colour values are the Dark+ palette, because the target user works in an
+ * IDE all day and a familiar surface makes a dense tool readable immediately.
+ * Everything is a custom property so a light theme is a variable swap rather
+ * than a rewrite.
+ */
+
+:root {
+  /* surfaces, back to front */
+  --bg-app: #1e1e1e;
+  --bg-side: #252526;
+  --bg-activity: #333333;
+  --bg-panel: #1e1e1e;
+  --bg-title: #3c3c3c;
+  --bg-status: #007acc;
+  --bg-input: #3c3c3c;
+  --bg-hover: #2a2d2e;
+  --bg-active: #37373d;
+  --bg-selected: #04395e;
+  --bg-tooltip: #252526;
+  --bg-badge: #4d4d4d;
+
+  /* text */
+  --fg: #cccccc;
+  --fg-strong: #e7e7e7;
+  --fg-muted: #8b8b8b;
+  --fg-dim: #6e6e6e;
+  --fg-inverse: #ffffff;
+
+  /* accents */
+  --accent: #0e639c;
+  --accent-hover: #1177bb;
+  --accent-fg: #ffffff;
+  --link: #3794ff;
+  --focus: #007fd4;
+
+  /* semantic */
+  --ok: #4ec9b0;
+  --warn: #cca700;
+  --error: #f14c4c;
+  --info: #75beff;
+  --added: #487e02;
+  --removed: #a1260d;
+  --modified: #e2c08d;
+
+  /* borders */
+  --border: #3c3c3c;
+  --border-soft: #2b2b2b;
+  --border-focus: #007fd4;
+
+  /* cluster palette for the landscape and legends. Chosen to stay
+     distinguishable at small point sizes on a dark background, and to remain
+     separable for the most common form of colour blindness (deuteranopia). */
+  --c0: #4fc1ff;
+  --c1: #ce9178;
+  --c2: #b5cea8;
+  --c3: #c586c0;
+  --c4: #dcdcaa;
+  --c5: #9cdcfe;
+  --c6: #f0a4a4;
+  --c7: #86d9ca;
+  --c8: #d7ba7d;
+  --c9: #a79df0;
+  --c-noise: #5a5a5a;
+  --c-seed: #ff8c00;
+
+  /* metrics */
+  --font: "Segoe UI", -apple-system, "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 19px;
+  --row-h: 22px;
+  --title-h: 35px;
+  --status-h: 22px;
+  --activity-w: 48px;
+  --radius: 3px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="light"] {
+  --bg-app: #ffffff;
+  --bg-side: #f3f3f3;
+  --bg-activity: #2c2c2c;
+  --bg-panel: #ffffff;
+  --bg-title: #dddddd;
+  --bg-input: #ffffff;
+  --bg-hover: #e8e8e8;
+  --bg-active: #e4e6f1;
+  --bg-selected: #cce5ff;
+  --bg-tooltip: #f3f3f3;
+  --bg-badge: #c4c4c4;
+  --fg: #333333;
+  --fg-strong: #1a1a1a;
+  --fg-muted: #6a6a6a;
+  --fg-dim: #949494;
+  --border: #dcdcdc;
+  --border-soft: #ebebeb;
+  --c-noise: #b0b0b0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--fs);
+  line-height: 1.5;
+  overflow: hidden;
+  /* A desktop app should not feel like a web page: text is not selectable by
+     default, only in the places where selecting is meaningful. */
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+[contenteditable],
+.selectable,
+.cm-editor {
+  user-select: text;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Scrollbars: overlay style, matching the editor's. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 150, 150, 0.6);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Focus is always visible: this is a keyboard-heavy tool. */
+:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: var(--fs);
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-dim);
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}

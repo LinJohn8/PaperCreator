@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content-Security-Policy for the renderer. The app displays untrusted text
+      (paper abstracts, LLM output), so inline script is disallowed. 'unsafe-inline'
+      is permitted for style only, which CodeMirror and three.js require.
+      connect-src covers the local backend and its SSE stream.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://localhost:*; worker-src 'self' blob:;"
+    />
+    <title>PaperCreator</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
